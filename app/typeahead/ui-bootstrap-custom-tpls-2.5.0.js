@@ -181,6 +181,7 @@ angular
       //mousedown & mouseup events
       //Issue #3699
       var selected;
+      var previous;
 
       //create a child scope for the typeahead directive so we are not polluting original scope
       //with typeahead-specific data (matches, query etc.)
@@ -439,7 +440,45 @@ angular
       scope.assignIsOpen = function(isOpen) {
         isOpenSetter(originalScope, isOpen);
       };
+      scope.navigate = function(activeIdx, evt) {
+        //called from within the $digest() cycle
+        var locals = {};
+        var model, item;
 
+        selected = true;
+        if (!previous) previous = modelCtrl.$viewValue;
+        if (activeIdx != -1) {
+          locals[parserResult.itemName] = item = scope.matches[activeIdx].model;
+          model = parserResult.modelMapper(originalScope, locals);
+        } else {
+          // locals[parserResult.itemName] = item = scope.matches[activeIdx].model;
+          model = previous;
+        }
+        $setModelValue(originalScope, model);
+        modelCtrl.$setValidity("editable", true);
+        modelCtrl.$setValidity("parse", true);
+
+        onSelectCallback(originalScope, {
+          $item: item,
+          $model: model,
+          $label: parserResult.viewMapper(originalScope, locals),
+          $event: evt
+        });
+
+        //resetMatches();
+
+        //return focus to the input element if a match was selected via a mouse click event
+        // use timeout to avoid $rootScope:inprog error
+        if (scope.$eval(attrs.typeaheadFocusOnSelect) !== false) {
+          $timeout(
+            function() {
+              element[0].focus();
+            },
+            0,
+            false
+          );
+        }
+      };
       scope.select = function(activeIdx, evt) {
         //called from within the $digest() cycle
         var locals = {};
@@ -508,22 +547,36 @@ angular
             originalScope.$digest();
             break;
           case 38: // up arrow
-            scope.activeIdx =
-              (scope.activeIdx >= 0 ? scope.activeIdx : scope.matches.length) -
-              1;
+            scope.activeIdx = scope.activeIdx - 1;
+            if (scope.activeIdx < -1) {
+              scope.activeIdx = scope.matches.length - 1;
+            }
+            scope.$apply(function() {
+              scope.navigate(scope.activeIdx, evt);
+            });
             scope.$digest();
-            target = popUpEl[0].querySelectorAll(".uib-typeahead-match")[
-              scope.activeIdx
-            ];
-            target.parentNode.scrollTop = target.offsetTop;
+            if (scope.activeIdx != -1) {
+              target = popUpEl[0].querySelectorAll(".uib-typeahead-match")[
+                scope.activeIdx
+              ];
+              target.parentNode.scrollTop = target.offsetTop;
+            }
             break;
           case 40: // down arrow
-            scope.activeIdx = (scope.activeIdx + 1) % scope.matches.length;
+            scope.activeIdx = scope.activeIdx + 1;
+            if (scope.activeIdx >= scope.matches.length) {
+              scope.activeIdx = -1;
+            }
+            scope.$apply(function() {
+              scope.navigate(scope.activeIdx, evt);
+            });
             scope.$digest();
-            target = popUpEl[0].querySelectorAll(".uib-typeahead-match")[
-              scope.activeIdx
-            ];
-            target.parentNode.scrollTop = target.offsetTop;
+            if (scope.activeIdx != -1) {
+              target = popUpEl[0].querySelectorAll(".uib-typeahead-match")[
+                scope.activeIdx
+              ];
+              target.parentNode.scrollTop = target.offsetTop;
+            }
             break;
           default:
             if (shouldSelect) {
